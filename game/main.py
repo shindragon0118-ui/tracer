@@ -1,23 +1,15 @@
 import pygame
 import random
 import sys
+import asyncio
 from abc import ABC, abstractmethod
 import math
 
 pygame.init()
-pygame.init()
-
-recall_img = pygame.image.load("recall.png")
-purse_img = pygame.image.load("purse.png")
-blink_img = pygame.image.load("blink.png")
-
-# 크기 통일 (UI용)
-blink_img = pygame.transform.scale(blink_img, (24, 24))
-recall_img = pygame.transform.scale(recall_img, (24, 24))
-purse_img = pygame.transform.scale(purse_img, (24, 24))
 
 WIDTH, HEIGHT = 1440, 900
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Game")
 clock = pygame.time.Clock()
 
 WHITE = (245, 245, 245)
@@ -26,6 +18,18 @@ BLUE = (70, 130, 255)
 RED = (220, 80, 80)
 GREEN = (80, 200, 120)
 GRAY = (180, 180, 180)
+
+# =========================
+# 이미지 로드 (pygbag: 직접 Surface로 대체)
+# =========================
+def make_icon(color, size=24):
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.circle(surf, color, (size//2, size//2), size//2)
+    return surf
+
+blink_img  = make_icon((100, 100, 255))
+recall_img = make_icon((100, 200, 100))
+purse_img  = make_icon((255, 200, 50))
 
 # =========================
 # Base
@@ -124,16 +128,12 @@ class Player(GameObject):
     def blink(self):
         if self._blink_stack <= 0:
             return
-
         dx = self._move_dx
         dy = self._move_dy
-
         if dx == 0 and dy == 0:
             return
-
         self._x += dx * 100
         self._y += dy * 100
-
         self._blink_stack -= 1
 
     def recall(self):
@@ -141,45 +141,32 @@ class Player(GameObject):
             return
         if len(self._history) < 180:
             return
-
-        # ===== 경로 저장 =====
         self._recall_path = self._history[-180:]
-
-        # 체력 복구 (시작 시점 기준)
         _, _, old_hp = self._recall_path[0]
         if old_hp >= self._hp:
             self._hp = old_hp
-
         self._recalling = True
         self._recall_timer = 0
-
         self._recall_cooldown = self._recall_max
 
     def shoot(self, objects):
         if self._reloading or self._recalling:
             return
-
         if self._ammo <= 0:
             self.reload()
             return
-
         if pygame.mouse.get_pressed()[0]:
             self._fire_timer += 1
             if self._fire_timer >= self._bullet_delay:
-
                 cx = self._x + self._size / 2
                 cy = self._y + self._size / 2
-
                 perp_x = -self._aim_dy
                 perp_y = self._aim_dx
-
                 offset = 8
-
                 objects.append(Bullet(cx + perp_x*offset, cy + perp_y*offset,
                                       self._aim_dx, self._aim_dy))
                 objects.append(Bullet(cx - perp_x*offset, cy - perp_y*offset,
                                       self._aim_dx, self._aim_dy))
-
                 self._ammo -= 2
                 self._fire_timer = 0
         else:
@@ -191,7 +178,6 @@ class Player(GameObject):
             self._reload_timer = self._reload_max
 
     def update(self):
-
         if self._blink_stack < self._blink_max_stack:
             self._blink_cooldown += 1
             if self._blink_cooldown >= self._blink_recharge_time:
@@ -202,24 +188,19 @@ class Player(GameObject):
         keys = pygame.key.get_pressed()
 
         if self._recalling:
-            step = 3  # 속도 (3배 빠르게)
-
+            step = 3
             index = self._recall_timer * step
-
             if index < len(self._recall_path):
                 reverse_index = len(self._recall_path) - 1 - index
-
                 x, y, _ = self._recall_path[reverse_index]
                 self._x = x
                 self._y = y
                 self._recall_timer += 1
             else:
                 self._recalling = False
-
                 self._ammo = 40
                 self._reloading = False
                 self._reload_timer = 0
-
             return
 
         self._x = max(0, min(WIDTH - self._size, self._x))
@@ -235,17 +216,14 @@ class Player(GameObject):
             length = math.hypot(dx, dy)
             dx /= length
             dy /= length
-
             self._x += dx * self._speed
             self._y += dy * self._speed
-
             self._move_dx = dx
             self._move_dy = dy
 
         mx, my = pygame.mouse.get_pos()
         cx = self._x + self._size/2
         cy = self._y + self._size/2
-
         dx = mx - cx
         dy = my - cy
         length = math.hypot(dx, dy)
@@ -274,17 +252,15 @@ class Player(GameObject):
                 self._reloading = False
 
     def draw(self, surface):
-        color = (150,150,255) if self._recalling else BLUE
+        color = (150, 150, 255) if self._recalling else BLUE
         pygame.draw.rect(surface, color, self.rect)
-
         cx = self._x + self._size/2
         cy = self._y + self._size/2
         pygame.draw.line(surface, BLACK,
                          (cx, cy),
                          (cx + self._aim_dx*50, cy + self._aim_dy*50), 3)
-
         if self._purse_ready:
-            pygame.draw.rect(surface, (255,200,0), self.rect, 3)
+            pygame.draw.rect(surface, (255, 200, 0), self.rect, 3)
 
 # =========================
 # Enemy / Bullet / HealPack
@@ -387,9 +363,7 @@ class PulseBomb(GameObject):
         else:
             self._x += self._dx * 4
             self._y += self._dy * 4
-
         self._timer += 1
-
         if self._timer >= self._max_lifetime:
             self.destroy()
 
@@ -430,7 +404,6 @@ class Explosion(GameObject):
         radius = int(5 + 15 * progress)
         alpha = int(255 * (1 - progress))
         color = (255, 200, 50)
-
         temp = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
         pygame.draw.circle(temp, (*color, alpha), (radius, radius), radius)
         surface.blit(temp, (self._x - radius, self._y - radius))
@@ -460,24 +433,20 @@ def draw_ui(surface, player):
         surface.blit(font.render(f"Reloading... {sec:.1f}s", True, RED), (right_x, base_y + 25))
 
     surface.blit(recall_img, (right_x, base_y + 60))
-
     if player._recall_cooldown > 0:
         text = f"Recall CD: {player._recall_cooldown / 60:.1f}s"
         color = BLACK
     else:
         text = "Recall Ready"
         color = GREEN
-
     surface.blit(font.render(text, True, color), (right_x + 30, base_y + 60))
 
     surface.blit(blink_img, (right_x, base_y + 90))
-
     if player._blink_stack == player._blink_max_stack:
         text = f"Blink: {player._blink_stack}/3 (Ready)"
     else:
         remain = (player._blink_recharge_time - player._blink_cooldown) / 60
         text = f"Blink: {player._blink_stack}/3 (+{remain:.1f}s)"
-
     surface.blit(font.render(text, True, BLACK), (right_x + 30, base_y + 90))
 
     surface.blit(purse_img, (right_x, base_y + 140))
@@ -487,96 +456,97 @@ def draw_ui(surface, player):
         surface.blit(font.render("Purse READY", True, RED), (right_x + 30, base_y + 165))
 
 # =========================
-# Setup & Loop
+# Main async loop (pygbag 필수)
 # =========================
-player = Player()
-objects = [player] + [Enemy() for _ in range(6)] + [HealPack()]
+async def main():
+    player = Player()
+    objects = [player] + [Enemy() for _ in range(6)] + [HealPack()]
 
-while True:
-    clock.tick(60)
+    while True:
+        clock.tick(60)
 
-    if not player.is_alive:
-        screen.fill(WHITE)
-        font = pygame.font.SysFont(None, 72)
-        text = font.render("GAME OVER", True, RED)
-        screen.blit(text, (WIDTH // 2 - 150, HEIGHT // 2 - 50))
-        pygame.display.flip()
-        pygame.time.delay(2000)
-        pygame.quit()
-        sys.exit()
+        if not player.is_alive:
+            screen.fill(WHITE)
+            font = pygame.font.SysFont(None, 72)
+            text = font.render("GAME OVER", True, RED)
+            screen.blit(text, (WIDTH // 2 - 150, HEIGHT // 2 - 50))
+            pygame.display.flip()
+            await asyncio.sleep(2)
+            return
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
 
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_q:
-                if player.use_purse():
-                    cx = player._x + player._size/2
-                    cy = player._y + player._size/2
-                    objects.append(PulseBomb(cx, cy, player._aim_dx, player._aim_dy))
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    if player.use_purse():
+                        cx = player._x + player._size/2
+                        cy = player._y + player._size/2
+                        objects.append(PulseBomb(cx, cy, player._aim_dx, player._aim_dy))
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 3:
-                if player.use_purse():
-                    cx = player._x + player._size/2
-                    cy = player._y + player._size/2
-                    objects.append(PulseBomb(cx, cy, player._aim_dx, player._aim_dy))
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 3:
+                    if player.use_purse():
+                        cx = player._x + player._size/2
+                        cy = player._y + player._size/2
+                        objects.append(PulseBomb(cx, cy, player._aim_dx, player._aim_dy))
 
-    for obj in objects:
-        obj.update()
+        for obj in objects:
+            obj.update()
 
-    player.shoot(objects)
+        player.shoot(objects)
 
-    enemies = [o for o in objects if isinstance(o, Enemy)]
-    bullets = [o for o in objects if isinstance(o, Bullet)]
-    bombs = [o for o in objects if isinstance(o, PulseBomb)]
-    heals = [o for o in objects if isinstance(o, HealPack)]
+        enemies = [o for o in objects if isinstance(o, Enemy)]
+        bullets = [o for o in objects if isinstance(o, Bullet)]
+        bombs   = [o for o in objects if isinstance(o, PulseBomb)]
+        heals   = [o for o in objects if isinstance(o, HealPack)]
 
-    # 힐팩 개수 유지 (추가된 부분)
-    if len(heals) < 3:
-        objects.append(HealPack())
+        if len(heals) < 3:
+            objects.append(HealPack())
 
-    for b in bullets:
-        for e in enemies:
-            if b.rect.colliderect(e.rect):
-                e.take_damage(6)
-                player.add_purse(6)
-                b.destroy()
-                break
-
-    for bomb in bombs:
-        for e in enemies:
-            if bomb.rect.colliderect(e.rect):
-                bomb.attach(e)
-
-    for bomb in bombs:
-        if bomb._timer >= 84:
+        for b in bullets:
             for e in enemies:
-                if math.hypot(e._x - bomb._x, e._y - bomb._y) <= 20:
-                    e.take_damage(350)
+                if b.rect.colliderect(e.rect):
+                    e.take_damage(6)
+                    player.add_purse(6)
+                    b.destroy()
+                    break
 
-            objects.append(Explosion(bomb._x, bomb._y))
-            bomb.destroy()
+        for bomb in bombs:
+            for e in enemies:
+                if bomb.rect.colliderect(e.rect):
+                    bomb.attach(e)
 
-    for e in enemies:
-        if player.rect.colliderect(e.rect):
-            e.on_player_collision(player)
+        for bomb in bombs:
+            if bomb._timer >= 84:
+                for e in enemies:
+                    if math.hypot(e._x - bomb._x, e._y - bomb._y) <= 20:
+                        e.take_damage(350)
+                objects.append(Explosion(bomb._x, bomb._y))
+                bomb.destroy()
 
-    for h in heals:
-        if player.rect.colliderect(h.rect):
-            player._hp = player._max_hp
-            h.destroy()
+        for e in enemies:
+            if player.rect.colliderect(e.rect):
+                e.on_player_collision(player)
 
-    while len([o for o in objects if isinstance(o, Enemy)]) < 6:
-        objects.append(Enemy())
+        for h in heals:
+            if player.rect.colliderect(h.rect):
+                player._hp = player._max_hp
+                h.destroy()
 
-    objects = [o for o in objects if o.is_alive or isinstance(o, Player)]
+        while len([o for o in objects if isinstance(o, Enemy)]) < 6:
+            objects.append(Enemy())
 
-    screen.fill(WHITE)
-    for obj in objects:
-        obj.draw(screen)
+        objects = [o for o in objects if o.is_alive or isinstance(o, Player)]
 
-    draw_ui(screen, player)
-    pygame.display.flip()
+        screen.fill(WHITE)
+        for obj in objects:
+            obj.draw(screen)
+
+        draw_ui(screen, player)
+        pygame.display.flip()
+
+        await asyncio.sleep(0)  # pygbag 필수: 브라우저에 제어권 반환
+
+asyncio.run(main())
